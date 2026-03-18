@@ -1,0 +1,10 @@
+robots:
+  - id: 0
+    model: point
+    start: [0, 0]
+    goal: [1, 0]
+
+  - id: 1
+    model: point
+    start: [1, 0]
+    goal: [0, 0]

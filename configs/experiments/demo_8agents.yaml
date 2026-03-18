@@ -1,0 +1,4 @@
+name: demo_8agents
+world: maze_8agents.yaml
+robots: robots_8_crossing.yaml
+planner: cbs.yaml

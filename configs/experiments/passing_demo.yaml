@@ -1,0 +1,4 @@
+name: passing_demo
+world: passing_3x2.yaml
+robots: passing_2.yaml
+planner: cbs.yaml

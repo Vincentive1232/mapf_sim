@@ -1,0 +1,5 @@
+type: grid
+width: 2
+height: 2
+connectivity: 4
+obstacles: []

@@ -1,0 +1,4 @@
+name: demo
+world: grid_empty.yaml
+robots: point_pair.yaml
+planner: cbs.yaml
