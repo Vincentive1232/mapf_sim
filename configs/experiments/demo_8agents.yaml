@@ -1,4 +1,4 @@
-name: demo_8agents
-world: maze_8agents.yaml
-robots: robots_8_crossing.yaml
+name: demo_4agents
+world: corridor_4agents.yaml
+robots: robots_4_crossing.yaml
 planner: cbs.yaml

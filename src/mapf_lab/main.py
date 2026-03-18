@@ -13,6 +13,8 @@ from mapf_lab.planners.low_level.astar import GridAStarPlanner
 from mapf_lab.robots.factory import build_robots
 from mapf_lab.world.factory import build_world
 
+from mapf_lab.viz.animate_grid import GridAnimator
+
 
 def main() -> None:
     project_root = Path(__file__).resolve().parents[2]
@@ -45,7 +47,7 @@ def main() -> None:
     print(indep_conflict)
 
     # CBS
-    cbs = CBSPlanner(low_level=low_level, max_ct_nodes=10000)
+    cbs = CBSPlanner(low_level=low_level, max_ct_nodes=100000)
     cbs_solution = cbs.solve(world, robots, objective=scenario.planner.objective)
 
     print("\n[bold]CBS result:[/bold]")
@@ -57,6 +59,19 @@ def main() -> None:
     final_conflict = detect_first_conflict(cbs_solution.paths)
     print("\n[bold]Conflict after CBS:[/bold]")
     print(final_conflict)
+
+    animator = GridAnimator(
+        world=world,
+        robots=robots,
+        solution=cbs_solution,
+        title="CBS Grid Solution",
+        interval_ms=700,
+        trail=True,
+        show_conflict_text=True,
+    )
+    
+    animator.save("outputs/cbs_demo.gif", fps=2)
+    print("saved to outputs/cbs_demo.gif")
 
 
 if __name__ == "__main__":
