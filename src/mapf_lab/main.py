@@ -9,6 +9,7 @@ from mapf_lab.core.conflicts import detect_first_conflict
 from mapf_lab.core.paths import DiscretePath
 from mapf_lab.core.solution import MultiAgentSolution
 from mapf_lab.planners.cbs.planner import CBSPlanner
+from mapf_lab.planners.icbs.planner import ICBSPlanner
 from mapf_lab.planners.low_level.astar import GridAStarPlanner
 from mapf_lab.robots.factory import build_robots
 from mapf_lab.world.factory import build_world
@@ -18,7 +19,7 @@ from mapf_lab.viz.animate_grid import GridAnimator
 
 def main() -> None:
     project_root = Path(__file__).resolve().parents[2]
-    experiment_path = project_root / "configs" / "experiments" / "demo_corridor.yaml"
+    experiment_path = project_root / "configs" / "experiments" / "demo_corridor_6.yaml"
 
     scenario = build_scenario_from_experiment(project_root, experiment_path)
     world = build_world(scenario.world)
@@ -47,38 +48,71 @@ def main() -> None:
     print(indep_conflict)
 
     # CBS
-    cbs = CBSPlanner(
-        low_level=low_level, 
-        max_ct_nodes=100000,
-        timeout_sec=10.0,
-        debug=False,
+    # cbs = CBSPlanner(
+    #     low_level=low_level, 
+    #     max_ct_nodes=100000,
+    #     timeout_sec=100.0,
+    #     debug=False,
+    # )
+    # cbs_result = cbs.solve(world, robots, objective=scenario.planner.objective)
+
+    # print("\n[bold]CBS result summary:[/bold]")
+    # print(cbs_result.to_dict())
+
+    # if not cbs_result.success():
+    #     print(f"[red]CBS did not return a solution[/red]")
+    #     return
+
+    # cbs_solution = cbs_result.solution
+    # final_conflict = detect_first_conflict(cbs_solution.paths)
+    # print("\n[bold]Conflict after CBS:[/bold]")
+    # print(final_conflict)
+
+    # animator = GridAnimator(
+    #     world=world,
+    #     robots=robots,
+    #     solution=cbs_solution,
+    #     title="CBS Grid Solution",
+    #     interval_ms=700,
+    #     trail=True,
+    #     show_conflict_text=True,
+    # )
+    
+    # animator.save("outputs/cbs_demo.gif", fps=2)
+    # print("saved to outputs/cbs_demo.gif")
+
+    icbs = ICBSPlanner(
+            low_level=low_level,
+            max_ct_nodes=10000,
+            timeout_sec=100.0,
+            debug=False,
     )
-    cbs_result = cbs.solve(world, robots, objective=scenario.planner.objective)
+    icbs_result = icbs.solve(world, robots, objective=scenario.planner.objective)
 
-    print("\n[bold]CBS result summary:[/bold]")
-    print(cbs_result.to_dict())
+    print("\n[bold]ICBS result summary:[/bold]")
+    print(icbs_result.to_dict())
 
-    if not cbs_result.success():
-        print(f"[red]CBS did not return a solution[/red]")
-        return
+    if not icbs_result.success():
+        print(f"[red]ICBS did not return a solution[/red]")
+        return  
 
-    cbs_solution = cbs_result.solution
-    final_conflict = detect_first_conflict(cbs_solution.paths)
-    print("\n[bold]Conflict after CBS:[/bold]")
+    icbs_solution = icbs_result.solution
+    final_conflict = detect_first_conflict(icbs_solution.paths)
+    print("\n[bold]Conflict after ICBS:[/bold]")
     print(final_conflict)
 
     animator = GridAnimator(
         world=world,
         robots=robots,
-        solution=cbs_solution,
-        title="CBS Grid Solution",
+        solution=icbs_solution,
+        title="ICBS Grid Solution",
         interval_ms=700,
         trail=True,
         show_conflict_text=True,
     )
     
-    animator.save("outputs/cbs_demo.gif", fps=2)
-    print("saved to outputs/cbs_demo.gif")
+    animator.save("outputs/icbs_demo.gif", fps=2)
+    print("saved to outputs/icbs_demo.gif")
 
 
 if __name__ == "__main__":

@@ -43,6 +43,7 @@ class CBSResult:
     duplicate_skipped: int
     replans: int
     replan_failures: int
+    cardinal_probes: int
 
     wall_time_sec: float
     best_cost_seen: float | None = None
@@ -61,6 +62,7 @@ class CBSResult:
             "duplicate_skipped": self.duplicate_skipped,
             "replans": self.replans,
             "replan_failures": self.replan_failures,
+            "cardinal_probes": self.cardinal_probes,
             "wall_time_sec": self.wall_time_sec,
             "best_cost_seen": self.best_cost_seen,
             "solution": None if self.solution is None else self.solution.to_dict(),

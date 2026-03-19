@@ -1,0 +1,11 @@
+type: grid
+width: 9
+height: 7
+connectivity: 4
+obstacles:
+  - [4, 0]
+  - [4, 1]
+  - [4, 2]
+  - [4, 4]
+  - [4, 5]
+  - [4, 6]

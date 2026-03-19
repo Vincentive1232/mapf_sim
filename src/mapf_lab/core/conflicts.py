@@ -7,6 +7,8 @@ from typing import Literal
 
 import numpy as np
 
+from mapf_lab.core.paths import DiscretePath
+
 
 ConflictKind = Literal["vertex", "edge"]
 
@@ -122,3 +124,72 @@ def detect_first_conflict(paths: dict[int, "DiscretePath"]) -> Conflict | None:
                     )
 
     return None
+
+
+def detect_all_conflicts(paths: dict[int, "DiscretePath"]) -> list[Conflict]:
+    """Detect all conflicts between any pair of robot paths.
+
+    Args:
+        paths: Dictionary mapping robot IDs to their planned discrete paths.
+
+    Returns:
+        A list of all detected Conflict objects.
+    """
+    conflicts: list[Conflict] = []
+    if not paths:
+        return conflicts
+
+    horizon = max(len(path) for path in paths.values())
+    agent_ids = list(paths.keys())
+
+    # vertex conflicts
+    # loop over time steps and pairs of agents to check for vertex conflicts (same cell at same time)
+    # always return the first conflict found, which is the earliest in time and lowest agent IDs due to the ordering of loops
+    for t in range(horizon):
+        for i_idx in range(len(agent_ids)):
+            for j_idx in range(i_idx + 1, len(agent_ids)):
+                ai = agent_ids[i_idx]
+                aj = agent_ids[j_idx]
+
+                pi = paths[ai][t]
+                pj = paths[aj][t]
+
+                ci = state_to_cell(pi)
+                cj = state_to_cell(pj)
+
+                if ci == cj:
+                    conflicts.append(
+                        VertexConflict(
+                            agent_i=ai,
+                            agent_j=aj,
+                            time=t,
+                            cell=ci,
+                        )
+                    )
+
+    # edge conflicts
+    # loop over time steps and pairs of agents to check for edge conflicts (swapping cells at same time)
+    for t in range(horizon - 1):
+        for i_idx in range(len(agent_ids)):
+            for j_idx in range(i_idx + 1, len(agent_ids)):
+                ai = agent_ids[i_idx]
+                aj = agent_ids[j_idx]
+
+                ai_t = state_to_cell(paths[ai][t])
+                ai_t1 = state_to_cell(paths[ai][t + 1])
+
+                aj_t = state_to_cell(paths[aj][t])
+                aj_t1 = state_to_cell(paths[aj][t + 1])
+
+                if ai_t == aj_t1 and ai_t1 == aj_t:
+                    conflicts.append(
+                        EdgeConflict(
+                            agent_i=ai,
+                            agent_j=aj,
+                            time=t,
+                            edge_i=(ai_t, ai_t1),
+                            edge_j=(aj_t, aj_t1),
+                        )
+                    )
+
+    return conflicts

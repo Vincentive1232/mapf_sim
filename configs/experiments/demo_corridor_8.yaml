@@ -1,0 +1,4 @@
+name: demo_corridor_8
+world: corridor_8agents.yaml
+robots: corridor_point_8.yaml
+planner: cbs.yaml

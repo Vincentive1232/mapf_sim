@@ -9,7 +9,8 @@ import time
 from rich import print
 
 from mapf_lab.core.constraints import Constraint, split_conflict_to_constraints
-from mapf_lab.core.conflicts import Conflict, detect_first_conflict
+from mapf_lab.core.conflicts import Conflict, detect_all_conflicts, detect_first_conflict
+# from mapf_lab.planners.cbs.conflict_selection import select_conflict
 from mapf_lab.core.paths import DiscretePath
 from mapf_lab.core.solution import MultiAgentSolution
 from mapf_lab.planners.cbs.ct_node import CTNode
@@ -39,6 +40,7 @@ class CBSPlanner:
             max_ct_nodes: Maximum number of CT nodes to expand before stopping.
             timeout_sec: Maximum time allowed for planning in seconds.
             debug: Whether to print debug logs during search.
+            node_id: Internal counter for assigning unique CT node ids.
         """
         self.low_level = low_level
         self.max_ct_nodes = max_ct_nodes
@@ -124,8 +126,11 @@ class CBSPlanner:
         new_paths[agent_id] = DiscretePath(states=result.path)
         return new_paths
 
-    def _select_conflict(self, conflict: Conflict | None) -> Conflict | None:
-        return conflict
+    def _select_conflict(self, paths, world=None, robots_by_id=None, node_constraints=None):
+        conflicts = detect_all_conflicts(paths)
+        if not conflicts:
+            return None, 0
+        return min(conflicts, key=lambda c: c.time), 0     # (conflict, probe_count)
 
     def solve(self, world, robots, objective: str = "soc") -> CBSResult:
         """Run CBS and return a conflict-free multi-agent solution.
@@ -146,6 +151,7 @@ class CBSPlanner:
         duplicate_skipped = 0
         replans = 0
         replan_failures = 0
+        cardinal_probes = 0
         best_cost_seen: float | None = None
 
         root = self._build_root(world, robots, objective=objective)
@@ -159,6 +165,7 @@ class CBSPlanner:
                 duplicate_skipped=duplicate_skipped,
                 replans=replans,
                 replan_failures=replan_failures,
+                cardinal_probes=cardinal_probes,
                 wall_time_sec=time.perf_counter() - t0,
                 best_cost_seen=best_cost_seen,
             )
@@ -182,6 +189,7 @@ class CBSPlanner:
                     duplicate_skipped=duplicate_skipped,
                     replans=replans,
                     replan_failures=replan_failures,
+                    cardinal_probes=cardinal_probes,
                     wall_time_sec=time.perf_counter() - t0,
                     best_cost_seen=best_cost_seen,
                 )
@@ -196,6 +204,7 @@ class CBSPlanner:
                     duplicate_skipped=duplicate_skipped,
                     replans=replans,
                     replan_failures=replan_failures,
+                    cardinal_probes=cardinal_probes,
                     wall_time_sec=time.perf_counter() - t0,
                     best_cost_seen=best_cost_seen,
                 )
@@ -220,11 +229,33 @@ class CBSPlanner:
                     duplicate_skipped=duplicate_skipped,
                     replans=replans,
                     replan_failures=replan_failures,
+                    cardinal_probes=cardinal_probes,
                     wall_time_sec=time.perf_counter() - t0,
                     best_cost_seen=best_cost_seen,
                 )
             
-            conflict = self._select_conflict(node.conflict)
+            conflict, probe_count = self._select_conflict(
+                node.paths, 
+                world=world,
+                robots_by_id=robots_by_id,
+                node_constraints=node.constraints,
+            )
+            cardinal_probes += probe_count
+            if conflict is None:
+                # No conflicts found, should not happen since node.conflict is not None
+                return CBSResult(
+                    status="success",
+                    solution=MultiAgentSolution(paths=node.paths),
+                    objective=objective,
+                    expanded_ct=expanded_ct,
+                    generated_ct=generated_ct,
+                    duplicate_skipped=duplicate_skipped,
+                    replans=replans,
+                    replan_failures=replan_failures,
+                    cardinal_probes=cardinal_probes,
+                    wall_time_sec=time.perf_counter() - t0,
+                    best_cost_seen=best_cost_seen,
+                )
             c1, c2 = split_conflict_to_constraints(conflict)
 
             for new_constraint in (c1, c2):
@@ -249,7 +280,12 @@ class CBSPlanner:
                     replan_failures += 1
                     continue
 
-                child_conflict = detect_first_conflict(replanned_paths)
+                child_conflict, _ = self._select_conflict(
+                    replanned_paths,
+                    world=world,
+                    robots_by_id=robots_by_id,
+                    node_constraints=child_constraints,
+                )
                 child_cost = self._compute_cost(replanned_paths, objective=objective)
                 child_id = self._next_id()
 
@@ -282,6 +318,7 @@ class CBSPlanner:
             duplicate_skipped=duplicate_skipped,
             replans=replans,
             replan_failures=replan_failures,
+            cardinal_probes=cardinal_probes,
             wall_time_sec=time.perf_counter() - t0,
             best_cost_seen=best_cost_seen,
         )
