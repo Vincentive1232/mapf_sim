@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import copy
 import heapq
+import time
 
 from rich import print
 
 from mapf_lab.core.constraints import Constraint, split_conflict_to_constraints
-from mapf_lab.core.conflicts import detect_first_conflict
+from mapf_lab.core.conflicts import Conflict, detect_first_conflict
 from mapf_lab.core.paths import DiscretePath
 from mapf_lab.core.solution import MultiAgentSolution
 from mapf_lab.planners.cbs.ct_node import CTNode
+from mapf_lab.planners.cbs.result import CBSResult
 from mapf_lab.planners.low_level.astar import GridAStarPlanner
 
 
@@ -27,17 +29,20 @@ class CBSPlanner:
         self,
         low_level: GridAStarPlanner,
         max_ct_nodes: int = 10000,
-        debug: bool = True,
+        timeout_sec: float | None = None,
+        debug: bool = False,
     ) -> None:
         """Initialize the CBS planner.
 
         Args:
             low_level: Low-level single-agent planner used for replanning.
             max_ct_nodes: Maximum number of CT nodes to expand before stopping.
+            timeout_sec: Maximum time allowed for planning in seconds.
             debug: Whether to print debug logs during search.
         """
         self.low_level = low_level
         self.max_ct_nodes = max_ct_nodes
+        self.timeout_sec = timeout_sec
         self.debug = debug
         self._node_id = 0
 
@@ -88,13 +93,14 @@ class CBSPlanner:
 
         conflict = detect_first_conflict(paths)
         cost = self._compute_cost(paths, objective=objective)
+        node_id = self._next_id()
         return CTNode(
-            priority=(cost, 0, self._next_id()),
+            priority=(cost, 0, node_id),
             cost=cost,
             constraints=[],
             paths=paths,
             conflict=conflict,
-            id=self._node_id,
+            id=node_id,
             depth=0,
         )
 
@@ -118,7 +124,10 @@ class CBSPlanner:
         new_paths[agent_id] = DiscretePath(states=result.path)
         return new_paths
 
-    def solve(self, world, robots, objective: str = "soc") -> MultiAgentSolution | None:
+    def _select_conflict(self, conflict: Conflict | None) -> Conflict | None:
+        return conflict
+
+    def solve(self, world, robots, objective: str = "soc") -> CBSResult:
         """Run CBS and return a conflict-free multi-agent solution.
 
         Args:
@@ -129,23 +138,71 @@ class CBSPlanner:
         Returns:
             A conflict-free solution if found, otherwise ``None``.
         """
+        t0 = time.perf_counter()
         robots_by_id = {r.id: r for r in robots}
+
+        expanded_ct = 0
+        generated_ct = 0
+        duplicate_skipped = 0
+        replans = 0
+        replan_failures = 0
+        best_cost_seen: float | None = None
 
         root = self._build_root(world, robots, objective=objective)
         if root is None:
-            return None
+            return CBSResult(
+                status="root_infeasible",
+                solution=None,
+                objective=objective,
+                expanded_ct=expanded_ct,
+                generated_ct=generated_ct,
+                duplicate_skipped=duplicate_skipped,
+                replans=replans,
+                replan_failures=replan_failures,
+                wall_time_sec=time.perf_counter() - t0,
+                best_cost_seen=best_cost_seen,
+            )
 
         open_list: list[CTNode] = []
         heapq.heappush(open_list, root)
+        generated_ct += 1
+        best_cost_seen = root.cost
 
         visited: set[frozenset[Constraint]] = set()
         visited.add(self._constraint_signature(root.constraints))
 
-        expanded_ct = 0
+        while open_list:
+            if self.timeout_sec is not None and (time.perf_counter() - t0) >= self.timeout_sec:
+                return CBSResult(
+                    status="timeout",
+                    solution=None,
+                    objective=objective,
+                    expanded_ct=expanded_ct,
+                    generated_ct=generated_ct,
+                    duplicate_skipped=duplicate_skipped,
+                    replans=replans,
+                    replan_failures=replan_failures,
+                    wall_time_sec=time.perf_counter() - t0,
+                    best_cost_seen=best_cost_seen,
+                )
 
-        while open_list and expanded_ct < self.max_ct_nodes:
+            if expanded_ct >= self.max_ct_nodes:
+                return CBSResult(
+                    status="node_budget_exceeded",
+                    solution=None,
+                    objective=objective,
+                    expanded_ct=expanded_ct,
+                    generated_ct=generated_ct,
+                    duplicate_skipped=duplicate_skipped,
+                    replans=replans,
+                    replan_failures=replan_failures,
+                    wall_time_sec=time.perf_counter() - t0,
+                    best_cost_seen=best_cost_seen,
+                )
+
             node = heapq.heappop(open_list)
             expanded_ct += 1
+            best_cost_seen = node.cost if best_cost_seen is None else min(best_cost_seen, node.cost)
 
             if self.debug:
                 print(
@@ -154,21 +211,33 @@ class CBSPlanner:
                 )
 
             if node.conflict is None:
-                if self.debug:
-                    print(f"[green]CBS solved[/green] after expanding {expanded_ct} CT nodes")
-                return MultiAgentSolution(paths=node.paths)
-
-            c1, c2 = split_conflict_to_constraints(node.conflict)
+                return CBSResult(
+                    status="success",
+                    solution=MultiAgentSolution(paths=node.paths),
+                    objective=objective,
+                    expanded_ct=expanded_ct,
+                    generated_ct=generated_ct,
+                    duplicate_skipped=duplicate_skipped,
+                    replans=replans,
+                    replan_failures=replan_failures,
+                    wall_time_sec=time.perf_counter() - t0,
+                    best_cost_seen=best_cost_seen,
+                )
+            
+            conflict = self._select_conflict(node.conflict)
+            c1, c2 = split_conflict_to_constraints(conflict)
 
             for new_constraint in (c1, c2):
                 child_constraints: list[Constraint] = list(node.constraints) + [new_constraint]
                 sig = self._constraint_signature(child_constraints)
 
                 if sig in visited:
+                    duplicate_skipped += 1
                     if self.debug:
                         print(f"[dim]Skip duplicate constraint set:[/dim] {child_constraints}")
                     continue
-
+                
+                replans += 1
                 replanned_paths = self._replan_one_agent(
                     world=world,
                     robots_by_id=robots_by_id,
@@ -177,6 +246,7 @@ class CBSPlanner:
                     agent_id=new_constraint.agent,
                 )
                 if replanned_paths is None:
+                    replan_failures += 1
                     continue
 
                 child_conflict = detect_first_conflict(replanned_paths)
@@ -195,6 +265,7 @@ class CBSPlanner:
 
                 visited.add(sig)
                 heapq.heappush(open_list, child)
+                generated_ct += 1
 
                 if self.debug:
                     print(
@@ -202,6 +273,15 @@ class CBSPlanner:
                         f"cost={child.cost}, constraint={new_constraint}, conflict={child.conflict}"
                     )
 
-        if self.debug:
-            print(f"[red]CBS terminated without solution[/red], expanded {expanded_ct} CT nodes")
-        return None
+        return CBSResult(
+            status="open_exhausted",
+            solution=None,
+            objective=objective,
+            expanded_ct=expanded_ct,
+            generated_ct=generated_ct,
+            duplicate_skipped=duplicate_skipped,
+            replans=replans,
+            replan_failures=replan_failures,
+            wall_time_sec=time.perf_counter() - t0,
+            best_cost_seen=best_cost_seen,
+        )

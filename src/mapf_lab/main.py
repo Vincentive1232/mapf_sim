@@ -47,15 +47,22 @@ def main() -> None:
     print(indep_conflict)
 
     # CBS
-    cbs = CBSPlanner(low_level=low_level, max_ct_nodes=100000)
-    cbs_solution = cbs.solve(world, robots, objective=scenario.planner.objective)
+    cbs = CBSPlanner(
+        low_level=low_level, 
+        max_ct_nodes=100000,
+        timeout_sec=10.0,
+        debug=False,
+    )
+    cbs_result = cbs.solve(world, robots, objective=scenario.planner.objective)
 
-    print("\n[bold]CBS result:[/bold]")
-    if cbs_solution is None:
-        print("[red]CBS failed to find a solution[/red]")
+    print("\n[bold]CBS result summary:[/bold]")
+    print(cbs_result.to_dict())
+
+    if not cbs_result.success():
+        print(f"[red]CBS did not return a solution[/red]")
         return
 
-    print(cbs_solution.to_dict())
+    cbs_solution = cbs_result.solution
     final_conflict = detect_first_conflict(cbs_solution.paths)
     print("\n[bold]Conflict after CBS:[/bold]")
     print(final_conflict)
