@@ -35,3 +35,11 @@ CBS animation output is saved in `outputs` and shown below.
 - File link: [`outputs/cbs_demo.gif`](outputs/cbs_demo.gif)
 
 ![CBS Demo](outputs/cbs_demo.gif)
+
+## ICBS Demo
+
+ICBS animation output is saved in `outputs` and shown below.
+
+- File link: [`outputs/icbs_demo.gif`](outputs/icbs_demo.gif)
+
+![CBS Demo](outputs/icbs_demo.gif)
