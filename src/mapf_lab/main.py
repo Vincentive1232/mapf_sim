@@ -18,7 +18,7 @@ from mapf_lab.viz.animate_grid import GridAnimator
 
 def main() -> None:
     project_root = Path(__file__).resolve().parents[2]
-    experiment_path = project_root / "configs" / "experiments" / "demo_8agents.yaml"
+    experiment_path = project_root / "configs" / "experiments" / "demo_corridor.yaml"
 
     scenario = build_scenario_from_experiment(project_root, experiment_path)
     world = build_world(scenario.world)

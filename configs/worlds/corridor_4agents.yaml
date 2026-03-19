@@ -3,7 +3,6 @@ width: 9
 height: 7
 connectivity: 4
 obstacles:
-  # 中间竖墙，只留一个门在 (4,3)
   - [4, 0]
   - [4, 1]
   - [4, 2]

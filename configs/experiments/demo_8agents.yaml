@@ -1,4 +1,0 @@
-name: demo_4agents
-world: corridor_4agents.yaml
-robots: robots_4_crossing.yaml
-planner: cbs.yaml
