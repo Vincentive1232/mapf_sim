@@ -1,0 +1,4 @@
+name: demo_Berlin_256
+world: Berlin_256.yaml
+robots: Berlin_256_4agents.yaml
+planner: cbs.yaml

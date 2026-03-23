@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import argparse
+import os
 from pathlib import Path
 
 from rich import print
@@ -17,18 +19,80 @@ from mapf_lab.world.factory import build_world
 from mapf_lab.viz.animate_grid import GridAnimator
 
 
+def _parse_args() -> argparse.Namespace:
+    """Parse CLI arguments for map preview and video export settings."""
+    parser = argparse.ArgumentParser(description="Run MAPF planning and export visualization.")
+    parser.add_argument(
+        "--map-only",
+        action="store_true",
+        help="Skip planning and export only a static map preview image.",
+    )
+    parser.add_argument(
+        "--video-fps",
+        type=int,
+        default=12,
+        help="Output video frames per second.",
+    )
+    parser.add_argument(
+        "--frame-stride",
+        type=int,
+        default=4,
+        help="Keep one frame every N planning steps during export.",
+    )
+    parser.add_argument(
+        "--max-frames",
+        type=int,
+        default=None,
+        help="Optional cap on rendered frames for faster export.",
+    )
+    parser.add_argument(
+        "--video-dpi",
+        type=int,
+        default=72,
+        help="DPI used when rendering video frames.",
+    )
+    parser.add_argument(
+        "--video-fast",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable/disable fast mp4 encoding settings.",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = _parse_args()
+
     project_root = Path(__file__).resolve().parents[2]
-    experiment_path = project_root / "configs" / "experiments" / "demo_corridor_6.yaml"
+    experiment_path = project_root / "configs" / "experiments" / "demo_Berlin_256.yaml"
 
     scenario = build_scenario_from_experiment(project_root, experiment_path)
-    world = build_world(scenario.world)
+    world = build_world(
+        scenario.world,
+        base_dir=project_root / "configs" / "worlds",
+    )
     robots = build_robots(scenario.robots)
 
     print("[green]mapf_lab boot ok[/green]")
     print(f"Project root: {project_root}")
 
-    low_level = GridAStarPlanner(heuristic="manhattan", max_time=128)
+    map_only_env = os.getenv("MAPF_MAP_ONLY", "0") == "1"
+    if args.map_only or map_only_env:
+        # Map-only mode skips all planners and exports immediately.
+        animator = GridAnimator(
+            world=world,
+            robots=robots,
+            solution=MultiAgentSolution(paths={}),
+            title="MAP Preview",
+            interval_ms=100,
+            trail=False,
+            show_conflict_text=False,
+        )
+        animator.save_map("outputs/testmap_map.png", dpi=120)
+        print("saved to outputs/testmap_map.png")
+        return
+
+    low_level = GridAStarPlanner(heuristic="manhattan", max_time=128000)
 
     # Independent planning
     indep_paths: dict[int, DiscretePath] = {}
@@ -106,13 +170,31 @@ def main() -> None:
         robots=robots,
         solution=icbs_solution,
         title="ICBS Grid Solution",
-        interval_ms=700,
-        trail=True,
-        show_conflict_text=True,
+        interval_ms=100,
+        trail=False,
+        show_conflict_text=False,
     )
-    
-    animator.save("outputs/icbs_demo.gif", fps=2)
-    print("saved to outputs/icbs_demo.gif")
+
+    video_fps = args.video_fps
+    video_stride = args.frame_stride
+    video_max_frames = args.max_frames
+    video_dpi = args.video_dpi
+    video_fast = args.video_fast
+
+    print(
+        "[cyan]Video export settings:[/cyan] "
+        f"fps={video_fps}, stride={video_stride}, max_frames={video_max_frames}, "
+        f"dpi={video_dpi}, fast={video_fast}"
+    )
+    animator.save(
+        "outputs/testmap_demo.mp4",
+        fps=video_fps,
+        frame_stride=video_stride,
+        max_frames=video_max_frames,
+        dpi=video_dpi,
+        fast=video_fast,
+    )
+    print("saved to outputs/testmap_demo.mp4")
 
 
 if __name__ == "__main__":

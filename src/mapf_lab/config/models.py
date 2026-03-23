@@ -19,13 +19,29 @@ class GridWorldConfig(BaseModel):
     """
 
     type: Literal["grid"]
-    width: int = Field(..., gt=0)
-    height: int = Field(..., gt=0)
+    width: int | None = Field(default=None, gt=0)
+    height: int | None = Field(default=None, gt=0)
     obstacles: list[list[int]] = Field(default_factory=list)
+
+    map_file: str | None = None
+    map_format: Literal["movingai"] | None = None
+
     connectivity: Literal[4, 8] = 4
 
     @model_validator(mode="after")
     def validate_obstacles(self) -> "GridWorldConfig":
+        using_external_map = self.map_file is not None
+
+        if using_external_map:
+            if self.map_format is None:
+                self.map_format = "movingai"
+            return self
+
+        if self.width is None or self.height is None:
+            raise ValueError(
+                "Grid world requires either map_file or both width and height"
+            )
+
         for obs in self.obstacles:
             if len(obs) != 2:
                 raise ValueError(f"Each obstacle must be [x, y], got {obs}")

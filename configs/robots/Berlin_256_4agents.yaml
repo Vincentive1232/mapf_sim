@@ -1,0 +1,20 @@
+robots:
+  - id: 0
+    model: point
+    start: [10, 10]
+    goal: [245, 245]
+
+  - id: 1
+    model: point
+    start: [245, 10]
+    goal: [20, 230]
+
+  - id: 2
+    model: point
+    start: [230, 230]
+    goal: [30, 30]
+
+  - id: 3
+    model: point
+    start: [30, 220]
+    goal: [220, 30]

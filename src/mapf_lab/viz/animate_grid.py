@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Iterable
 
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
@@ -134,17 +135,32 @@ class GridAnimator:
         ys = [float(s[1]) for s in states]
         return xs, ys
 
-    def create_animation(self) -> animation.FuncAnimation:
+    def create_animation(
+        self,
+        frame_stride: int = 1,
+        max_frames: int | None = None,
+        figsize: tuple[float, float] = (8, 7),
+    ) -> animation.FuncAnimation:
         """Create and store a matplotlib animation for the current solution.
+
+        Args:
+            frame_stride: Keep one every N simulation steps in the output.
+            max_frames: Optional hard cap on number of rendered frames.
+            figsize: Figure size in inches.
 
         Returns:
             Configured ``matplotlib.animation.FuncAnimation`` instance.
         """
-        self.fig, self.ax = plt.subplots(figsize=(8, 7))
+        self.fig, self.ax = plt.subplots(figsize=figsize)
         self._draw_grid()
         self._draw_static_markers()
 
         horizon = self.solution.horizon()
+        stride = max(1, int(frame_stride))
+        frame_values: Iterable[int] = range(0, horizon, stride)
+        if max_frames is not None and max_frames > 0:
+            frame_values = list(frame_values)[: max_frames]
+
         robot_artists = {}
         trail_artists = {}
         text_artist = None
@@ -205,7 +221,7 @@ class GridAnimator:
         self.anim = animation.FuncAnimation(
             self.fig,
             update,
-            frames=horizon,
+            frames=frame_values,
             interval=self.interval_ms,
             blit=False,
             repeat=True,
@@ -218,18 +234,74 @@ class GridAnimator:
             self.create_animation()
         plt.show()
 
-    def save(self, out_path: str | Path, fps: int = 2) -> None:
+    def save(
+        self,
+        out_path: str | Path,
+        fps: int = 2,
+        frame_stride: int = 1,
+        max_frames: int | None = None,
+        dpi: int = 100,
+        fast: bool = False,
+    ) -> None:
         """Render and save the animation to a file.
 
         Args:
             out_path: Output file path, such as ``.gif`` or ``.mp4``.
             fps: Output frames per second.
+            frame_stride: Keep one frame every N simulation steps.
+            max_frames: Optional cap to stop rendering long tails.
+            dpi: Rasterization DPI for each rendered frame.
+            fast: Use faster encoding settings for mp4 when possible.
 
         Returns:
             ``None``.
         """
-        if self.anim is None:
-            self.create_animation()
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        self.anim.save(str(out_path), fps=fps)
+
+        # Rebuild animation with export settings to avoid rendering unnecessary frames.
+        self.create_animation(
+            frame_stride=frame_stride,
+            max_frames=max_frames,
+            figsize=(6, 5) if fast else (8, 7),
+        )
+        assert self.anim is not None
+
+        writer = None
+        if fast and out_path.suffix.lower() == ".mp4":
+            writer = animation.FFMpegWriter(
+                fps=fps,
+                codec="libx264",
+                bitrate=900,
+                extra_args=["-preset", "ultrafast", "-crf", "32", "-pix_fmt", "yuv420p"],
+            )
+
+        if writer is None:
+            self.anim.save(str(out_path), fps=fps, dpi=dpi)
+        else:
+            self.anim.save(str(out_path), writer=writer, dpi=dpi)
+
+    def save_map(self, out_path: str | Path, dpi: int = 120) -> None:
+        """Save a static map snapshot (grid + start/goal markers) as an image.
+
+        This is much faster than video export because it renders only one frame.
+
+        Args:
+            out_path: Output image path, such as ``.png``.
+            dpi: Figure DPI used for raster output quality.
+
+        Returns:
+            ``None``.
+        """
+        fig, ax = plt.subplots(figsize=(8, 7))
+        self.fig, self.ax = fig, ax
+        self._draw_grid()
+        self._draw_static_markers()
+
+        out_path = Path(out_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(str(out_path), dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+
+        self.fig = None
+        self.ax = None

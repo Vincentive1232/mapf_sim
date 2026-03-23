@@ -69,7 +69,7 @@ def select_classified_conflict(
         best = min(
             classified_conflicts,
             key=lambda cc: (_priority(cc.cardinality), cc.conflict.time),
-        )
+        ) # first sort by cardinality priority, then by earliest time
         return best.conflict
 
     raise ValueError(f"Unsupported classified conflict selection mode: {mode}")

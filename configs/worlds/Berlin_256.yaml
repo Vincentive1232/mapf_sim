@@ -1,0 +1,4 @@
+type: grid
+map_file: ../../configs/predef_map_files/Berlin_256.map
+map_format: movingai
+connectivity: 4
