@@ -10,6 +10,7 @@ from mapf_lab.core.constraints import EdgeConstraint, VertexConstraint
 from mapf_lab.planners.low_level.grid_actions import get_grid_moves
 from mapf_lab.planners.low_level.heuristics import euclidean, manhattan
 from mapf_lab.planners.low_level.types import GridNode, PathResult, PriorityState
+from mapf_lab.planners.low_level.conflict_reservation_table import ConflictAvoidanceTable
 
 
 class GridAStarPlanner:
@@ -117,6 +118,7 @@ class GridAStarPlanner:
         world, 
         robot,
         constraints: list[VertexConstraint | EdgeConstraint] | None = None,
+        cat: ConflictAvoidanceTable | None = None,
     ) -> PathResult:
         """Plan a path for the given robot in the specified world.
 
@@ -124,6 +126,7 @@ class GridAStarPlanner:
             world: GridWorld instance representing the environment.
             robot: Robot instance with start and goal states.
             constraints: List of vertex and edge constraints to consider.
+            cat: Conflict Avoidance Table used as a secondary tie-breaker.
 
         Returns:
             PathResult containing the planned path and associated information.
@@ -166,21 +169,21 @@ class GridAStarPlanner:
         
         open_heap: list[PriorityState] = []
         g_score: dict[tuple[tuple[int, int], int], float] = {start_key: 0.0}
+        cat_score: dict[tuple[tuple[int, int], int], int] = {start_key: 0}
         parents: dict[tuple[tuple[int, int], int], tuple[tuple[int, int], int] | None] = {start_key: None}
         closed: set[tuple[tuple[int, int], int]] = set()
 
         # compute heuristic for the start node and add it to the open set
         h0 = self._heuristic(start, goal)
-        heapq.heappush(open_heap, PriorityState(priority=h0, node=(start, 0, 0.0)))
+        heapq.heappush(open_heap, PriorityState(priority=(h0, 0, -0.0), node=(start, 0, 0.0, 0)))
 
         expanded = 0
-
         # get the possible moves based on the world's connectivity, also include the wait action (0, 0) with a cost of 1.0
         moves = get_grid_moves(world.connectivity) + [(0, 0, 1.0)]   
 
         while open_heap:
             current_state = heapq.heappop(open_heap)
-            current_cell, current_t, current_g = current_state.node
+            current_cell, current_t, current_g, current_cat_hits = current_state.node
             current_key = (current_cell, current_t)
 
             if current_key in closed:
@@ -219,15 +222,35 @@ class GridAStarPlanner:
 
                 tentative_g = current_g + step_cost
 
+                extra_cat = 0
+                if cat is not None:
+                    extra_cat += cat.vertex_penalty(next_cell, next_t)
+                    extra_cat += cat.edge_penalty(current_cell, next_cell, current_t)
+
+                tentative_cat_hits = current_cat_hits + extra_cat
+
+                old_g = g_score.get(next_key, float("inf"))
+                old_cat = cat_score.get(next_key, float("inf"))
+
                 # If this path to neighbor is worse than any previously recorded, skip it
-                if tentative_g >= g_score.get(next_key, float("inf")):
+                if tentative_g > old_g:
+                    continue
+                if tentative_g == old_g and tentative_cat_hits >= old_cat:
                     continue
                 
                 g_score[next_key] = tentative_g
+                cat_score[next_key] = tentative_cat_hits
                 parents[next_key] = current_key
+
                 h = self._heuristic(next_cell, goal)
                 f = tentative_g + h
-                heapq.heappush(open_heap, PriorityState(priority=f, node=(next_cell, next_t, tentative_g)))
+                heapq.heappush(
+                    open_heap, 
+                    PriorityState(
+                        priority=(f, tentative_cat_hits, -tentative_g), 
+                        node=(next_cell, next_t, tentative_g, tentative_cat_hits),
+                        ),
+                    )
 
         return PathResult(
             success=False, 

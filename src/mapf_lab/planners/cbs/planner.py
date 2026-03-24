@@ -16,6 +16,7 @@ from mapf_lab.core.solution import MultiAgentSolution
 from mapf_lab.planners.cbs.ct_node import CTNode
 from mapf_lab.planners.cbs.result import CBSResult
 from mapf_lab.planners.low_level.astar import GridAStarPlanner
+from mapf_lab.planners.low_level.conflict_reservation_table import ConflictAvoidanceTable
 
 
 class CBSPlanner:
@@ -115,7 +116,15 @@ class CBSPlanner:
         new_paths = copy.deepcopy(old_paths)
         robot = robots_by_id[agent_id]
 
-        result = self.low_level.solve(world, robot, constraints=constraints)
+        cat = self._build_cat_for_agent(old_paths, exclude_agent=agent_id)
+
+        result = self.low_level.solve(
+            world, 
+            robot, 
+            constraints=constraints, 
+            cat=cat
+        )
+        
         if not result.success:
             if self.debug:
                 print(
@@ -131,6 +140,24 @@ class CBSPlanner:
         if not conflicts:
             return None, 0
         return min(conflicts, key=lambda c: c.time), 0     # (conflict, probe_count)
+
+    def _build_cat_for_agent(self, paths: dict[int, object], exclude_agent: int):
+        """Build CAT from all current paths except the replanned agent.
+
+        Assumes each path object has `states`, where each state is at least [x, y].
+        """
+        cat_paths: dict[int, list[tuple[int, int]]] = {}
+        for aid, path in paths.items():
+            if aid == exclude_agent:
+                continue
+            cells: list[tuple[int, int]] = []
+            for s in path.states:
+                x = int(round(s[0]))
+                y = int(round(s[1]))
+                cells.append((x, y))
+            cat_paths[aid] = cells
+
+        return ConflictAvoidanceTable.from_other_paths(cat_paths, exclude_agent=None)
 
     def solve(self, world, robots, objective: str = "soc") -> CBSResult:
         """Run CBS and return a conflict-free multi-agent solution.

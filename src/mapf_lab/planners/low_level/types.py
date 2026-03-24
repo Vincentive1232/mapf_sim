@@ -17,7 +17,7 @@ class PriorityState:
         node: Planner node payload associated with the priority.
     """
 
-    priority: float
+    priority: tuple[float, int, float]
     node: Any = field(compare=False)
 
 
