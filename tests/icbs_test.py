@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from rich import print
@@ -48,12 +49,15 @@ def main() -> None:
 
     icbs = ICBSPlanner(
             low_level=low_level,
-            max_ct_nodes=10000,
-            timeout_sec=100.0,
+            max_ct_nodes=100000,
+            timeout_sec=1000.0,
             debug=False,
     )
+    t0 = time.perf_counter()
     icbs_result = icbs.solve(world, robots, objective=scenario.planner.objective)
+    elapsed = time.perf_counter() - t0
 
+    print(f"\n[bold cyan]ICBS solve time: {elapsed:.4f} s[/bold cyan]")
     print("\n[bold]ICBS result summary:[/bold]")
     print(icbs_result.to_dict())
 

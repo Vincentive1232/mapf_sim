@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from rich import print
@@ -50,11 +51,14 @@ def main() -> None:
     cbs = CBSPlanner(
         low_level=low_level, 
         max_ct_nodes=100000,
-        timeout_sec=100.0,
+        timeout_sec=1000.0,
         debug=False,
     )
+    t0 = time.perf_counter()
     cbs_result = cbs.solve(world, robots, objective=scenario.planner.objective)
+    elapsed = time.perf_counter() - t0
 
+    print(f"\n[bold cyan]CBS solve time: {elapsed:.4f} s[/bold cyan]")
     print("\n[bold]CBS result summary:[/bold]")
     print(cbs_result.to_dict())
 

@@ -50,14 +50,14 @@ def select_conflict(conflicts: list[Conflict], mode: str = "earliest") -> Confli
 
 def select_classified_conflict(
     classified_conflicts: list[ClassifiedConflict],
-    mode: str = "cardinality_then_earliest",
+    mode: str = "cardinal_then_earliest",
 ) -> Conflict | None:
     """Select one conflict from the list of classified conflicts according to the specified mode.
 
     Args:
         classified_conflicts: List of conflicts annotated with cardinality information.
         mode: Conflict selection strategy. Supported values are:
-            - "cardinality_then_earliest": Select the conflict with the highest cardinality (cardinal > semi-cardinal > non-cardinal), breaking ties by earliest time step.
+            - "cardinal_then_earliest": Select the conflict with the highest cardinality (cardinal > semi-cardinal > non-cardinal), breaking ties by earliest time step.
 
     Returns:
         The selected conflict, or ``None`` if the input list is empty.

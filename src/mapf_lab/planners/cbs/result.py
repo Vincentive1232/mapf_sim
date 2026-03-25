@@ -3,6 +3,7 @@ from __future__ import annotations
 """Result container for a complete CBS run."""
 
 from dataclasses import dataclass
+from dataclasses import field
 from typing import Literal
 
 from mapf_lab.core.solution import MultiAgentSolution
@@ -47,6 +48,7 @@ class CBSResult:
 
     wall_time_sec: float
     best_cost_seen: float | None = None
+    extra_metrics: dict[str, int | float | str | bool | None] = field(default_factory=dict)
 
     def success(self) -> bool:
         """Return ``True`` only for a valid solution-bearing success result."""
@@ -65,5 +67,6 @@ class CBSResult:
             "cardinal_probes": self.cardinal_probes,
             "wall_time_sec": self.wall_time_sec,
             "best_cost_seen": self.best_cost_seen,
+            "extra_metrics": self.extra_metrics,
             "solution": None if self.solution is None else self.solution.to_dict(),
         }

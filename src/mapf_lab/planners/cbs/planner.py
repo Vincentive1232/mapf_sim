@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 import heapq
 import time
+from collections.abc import Callable
+from typing import Any
 
 from rich import print
 
@@ -17,6 +19,9 @@ from mapf_lab.planners.cbs.ct_node import CTNode
 from mapf_lab.planners.cbs.result import CBSResult
 from mapf_lab.planners.low_level.astar import GridAStarPlanner
 from mapf_lab.planners.low_level.conflict_reservation_table import ConflictAvoidanceTable
+
+
+ConflictSelectionFn = Callable[[dict[int, DiscretePath], Any, dict[int, Any], list[Constraint]], tuple[Conflict | None, int]]
 
 
 class CBSPlanner:
@@ -124,7 +129,7 @@ class CBSPlanner:
             constraints=constraints, 
             cat=cat
         )
-        
+
         if not result.success:
             if self.debug:
                 print(
@@ -140,6 +145,52 @@ class CBSPlanner:
         if not conflicts:
             return None, 0
         return min(conflicts, key=lambda c: c.time), 0     # (conflict, probe_count)
+
+    def _reset_algorithm_counters(self) -> None:
+        """Reset planner-specific per-run counters.
+
+        Base CBS has no extra counters. Subclasses can override.
+        """
+        return
+
+    def _collect_algorithm_metrics(self) -> dict[str, int | float | str | bool | None]:
+        """Return planner-specific metrics to embed into :class:`CBSResult`.
+
+        Subclasses can override to expose algorithm diagnostics without changing
+        the shared result schema.
+        """
+        return {}
+
+    def _make_result(
+        self,
+        *,
+        status: str,
+        solution: MultiAgentSolution | None,
+        objective: str,
+        expanded_ct: int,
+        generated_ct: int,
+        duplicate_skipped: int,
+        replans: int,
+        replan_failures: int,
+        cardinal_probes: int,
+        wall_time_sec: float,
+        best_cost_seen: float | None,
+    ) -> CBSResult:
+        """Create a unified result object including planner-specific metrics."""
+        return CBSResult(
+            status=status,
+            solution=solution,
+            objective=objective,
+            expanded_ct=expanded_ct,
+            generated_ct=generated_ct,
+            duplicate_skipped=duplicate_skipped,
+            replans=replans,
+            replan_failures=replan_failures,
+            cardinal_probes=cardinal_probes,
+            wall_time_sec=wall_time_sec,
+            best_cost_seen=best_cost_seen,
+            extra_metrics=self._collect_algorithm_metrics(),
+        )
 
     def _build_cat_for_agent(self, paths: dict[int, object], exclude_agent: int):
         """Build CAT from all current paths except the replanned agent.
@@ -159,7 +210,13 @@ class CBSPlanner:
 
         return ConflictAvoidanceTable.from_other_paths(cat_paths, exclude_agent=None)
 
-    def solve(self, world, robots, objective: str = "soc") -> CBSResult:
+    def solve(
+        self,
+        world,
+        robots,
+        objective: str = "soc",
+        conflict_selection_fn: ConflictSelectionFn | None = None,
+    ) -> CBSResult:
         """Run CBS and return a conflict-free multi-agent solution.
 
         Args:
@@ -171,7 +228,9 @@ class CBSPlanner:
             A conflict-free solution if found, otherwise ``None``.
         """
         t0 = time.perf_counter()
+        self._reset_algorithm_counters()
         robots_by_id = {r.id: r for r in robots}
+        conflict_selector = conflict_selection_fn or self._select_conflict
 
         expanded_ct = 0
         generated_ct = 0
@@ -183,7 +242,7 @@ class CBSPlanner:
 
         root = self._build_root(world, robots, objective=objective)
         if root is None:
-            return CBSResult(
+            return self._make_result(
                 status="root_infeasible",
                 solution=None,
                 objective=objective,
@@ -197,6 +256,15 @@ class CBSPlanner:
                 best_cost_seen=best_cost_seen,
             )
 
+        root_conflict, probe_count = conflict_selector(
+            root.paths,
+            world=world,
+            robots_by_id=robots_by_id,
+            node_constraints=root.constraints,
+        )
+        cardinal_probes += probe_count
+        root.conflict = root_conflict
+
         open_list: list[CTNode] = []
         heapq.heappush(open_list, root)
         generated_ct += 1
@@ -207,7 +275,7 @@ class CBSPlanner:
 
         while open_list:
             if self.timeout_sec is not None and (time.perf_counter() - t0) >= self.timeout_sec:
-                return CBSResult(
+                return self._make_result(
                     status="timeout",
                     solution=None,
                     objective=objective,
@@ -222,7 +290,7 @@ class CBSPlanner:
                 )
 
             if expanded_ct >= self.max_ct_nodes:
-                return CBSResult(
+                return self._make_result(
                     status="node_budget_exceeded",
                     solution=None,
                     objective=objective,
@@ -247,7 +315,7 @@ class CBSPlanner:
                 )
 
             if node.conflict is None:
-                return CBSResult(
+                return self._make_result(
                     status="success",
                     solution=MultiAgentSolution(paths=node.paths),
                     objective=objective,
@@ -261,28 +329,30 @@ class CBSPlanner:
                     best_cost_seen=best_cost_seen,
                 )
             
-            conflict, probe_count = self._select_conflict(
-                node.paths, 
-                world=world,
-                robots_by_id=robots_by_id,
-                node_constraints=node.constraints,
-            )
-            cardinal_probes += probe_count
-            if conflict is None:
-                # No conflicts found, should not happen since node.conflict is not None
-                return CBSResult(
-                    status="success",
-                    solution=MultiAgentSolution(paths=node.paths),
-                    objective=objective,
-                    expanded_ct=expanded_ct,
-                    generated_ct=generated_ct,
-                    duplicate_skipped=duplicate_skipped,
-                    replans=replans,
-                    replan_failures=replan_failures,
-                    cardinal_probes=cardinal_probes,
-                    wall_time_sec=time.perf_counter() - t0,
-                    best_cost_seen=best_cost_seen,
-                )
+            # conflict, probe_count = self._select_conflict(
+            #     node.paths, 
+            #     world=world,
+            #     robots_by_id=robots_by_id,
+            #     node_constraints=node.constraints,
+            # )
+            # cardinal_probes += probe_count
+            # if conflict is None:
+            #     # No conflicts found, should not happen since node.conflict is not None
+            #     return CBSResult(
+            #         status="success",
+            #         solution=MultiAgentSolution(paths=node.paths),
+            #         objective=objective,
+            #         expanded_ct=expanded_ct,
+            #         generated_ct=generated_ct,
+            #         duplicate_skipped=duplicate_skipped,
+            #         replans=replans,
+            #         replan_failures=replan_failures,
+            #         cardinal_probes=cardinal_probes,
+            #         wall_time_sec=time.perf_counter() - t0,
+            #         best_cost_seen=best_cost_seen,
+            #     )
+
+            conflict = node.conflict
             c1, c2 = split_conflict_to_constraints(conflict)
 
             for new_constraint in (c1, c2):
@@ -307,12 +377,13 @@ class CBSPlanner:
                     replan_failures += 1
                     continue
 
-                child_conflict, _ = self._select_conflict(
+                child_conflict, probe_count = conflict_selector(
                     replanned_paths,
                     world=world,
                     robots_by_id=robots_by_id,
                     node_constraints=child_constraints,
                 )
+                cardinal_probes += probe_count
                 child_cost = self._compute_cost(replanned_paths, objective=objective)
                 child_id = self._next_id()
 
@@ -336,7 +407,7 @@ class CBSPlanner:
                         f"cost={child.cost}, constraint={new_constraint}, conflict={child.conflict}"
                     )
 
-        return CBSResult(
+        return self._make_result(
             status="open_exhausted",
             solution=None,
             objective=objective,
