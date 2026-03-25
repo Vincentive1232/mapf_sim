@@ -198,7 +198,7 @@ def build_mdd(
     reachable[0].add(start)
 
     while q:
-        cell, t = q.popleft()
+        cell, t = q.popleft()  # popleft is doing pop from the front of the queue
 
         if t == max_t:
             continue

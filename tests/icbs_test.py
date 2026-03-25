@@ -22,13 +22,16 @@ def main() -> None:
     experiment_path = project_root / "configs" / "experiments" / "demo_corridor_6.yaml"
 
     scenario = build_scenario_from_experiment(project_root, experiment_path)
-    world = build_world(scenario.world)
+    world = build_world(
+        scenario.world,
+        base_dir=project_root / "configs" / "worlds",
+    )
     robots = build_robots(scenario.robots)
 
     print("[green]mapf_lab boot ok[/green]")
     print(f"Project root: {project_root}")
 
-    low_level = GridAStarPlanner(heuristic="manhattan", max_time=128)
+    low_level = GridAStarPlanner(heuristic="manhattan", max_time=1280)
 
     # Independent planning
     indep_paths: dict[int, DiscretePath] = {}
